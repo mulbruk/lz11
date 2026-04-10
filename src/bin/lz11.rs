@@ -30,7 +30,7 @@ enum Commands {
 
 fn decompress(input: &PathBuf, output: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
   let data = fs::read(input)?;
-  let decompressed_data = lz11::decompress(&data)?;
+  let decompressed_data = lz11::decompress::decompress(&data)?;
   fs::write(output, decompressed_data)?;
   Ok(())
 }
@@ -47,7 +47,7 @@ fn main() {
     }
     Commands::Compress { input, output } => {
       let data = fs::read(input).expect("Failed to read input file");
-      match lz11::compress_lz11(&data, lz11::CompressionMethod::HashChain) {
+      match lz11::compress::compress_lz11(&data, lz11::compress::CompressionMethod::LazyHash) {
         Ok(compressed_data) => {
           fs::write(output, compressed_data).expect("Failed to write output file");
         }
