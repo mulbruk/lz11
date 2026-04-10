@@ -10,4 +10,7 @@ pub enum LZError {
 
   #[error("data too short")]
   DataTooShort,
+
+  #[error("input data too large")]
+  InputTooLarge,
 }
