@@ -47,7 +47,7 @@ fn main() {
     }
     Commands::Compress { input, output } => {
       let data = fs::read(input).expect("Failed to read input file");
-      match lz11::compress::compress_lz11(&data, lz11::compress::CompressionMethod::LazyHash) {
+      match lz11::compress::compress_lz11(&data, lz11::compress::CompressionMethod::Optimal) {
         Ok(compressed_data) => {
           fs::write(output, compressed_data).expect("Failed to write output file");
         }
