@@ -1,7 +1,12 @@
-pub mod compress;
-pub mod decompress;
-pub mod error;
-pub mod format;
+mod compress;
+mod decompress;
+mod error;
+mod format;
+
+pub use crate::compress::lz11::{LZ11Strategy, compress_lz11};
+pub use crate::decompress::{decompress};
+pub use crate::error::LZError;
+pub use crate::format::Format;
 
 // LZ11 Compression --------------------------------------------
 

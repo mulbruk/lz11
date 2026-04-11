@@ -1,6 +1,8 @@
 use crate::error::LZError;
 use crate::format::Format;
 
+use super::hash_matcher::HashMatcher;
+
 const LZ11_MAX_INPUT_LENGTH: usize = 0xFFFFFFFF;
 
 const LZ11_MIN_MATCH_LENGTH: usize = 3;
@@ -16,84 +18,6 @@ const HASH_MAX_CHAIN: usize = 4096; // Limit the number of candidates to check f
 enum Choice {
   Literal,
   Reference { length: usize, offset: usize },
-}
-
-struct HashMatcher {
-  head: Vec<usize>,
-  prev: Vec<usize>,
-}
-
-impl HashMatcher {
-  fn new() -> Self {
-    HashMatcher {
-      // head[hash] gives the most recent offset where a 3-byte sequence with that hash was seen, or usize::MAX if none
-      head: vec![usize::MAX; HASH_SIZE],
-
-      // ring buffer, prev[offset % WINDOW_SIZE] gives the previous offset where the same 3-byte sequence was seen, or usize::MAX if none
-      prev: vec![usize::MAX; WINDOW_SIZE],
-    }
-  }
-
-  #[inline]
-  fn hash(data: &[u8], offset: usize) -> usize {
-    if offset + 2 >= data.len() {
-      return 0;
-    }
-    let b1 = data[offset] as usize;
-    let b2 = data[offset + 1] as usize;
-    let b3 = data[offset + 2] as usize;
-    ((b1 << 8) ^ (b2 << 4) ^ b3) & HASH_MASK
-  }
-
-  fn insert(&mut self, data: &[u8], offset: usize) {
-    if offset + 2 >= data.len() {
-      return;
-    }
-
-    let hash_value = Self::hash(data, offset);
-    self.prev[offset % WINDOW_SIZE] = self.head[hash_value];
-    self.head[hash_value] = offset;
-  }
-
-  /// Returns a vector containing the offset and length of each match found for the given offset.
-  /// The search is limited to the sliding window and the maximum match length.
-  fn find_matches(&self, data: &[u8], offset: usize) -> Vec<(usize, usize)> {
-    if offset < LZ11_MIN_MATCH_LENGTH || data.len() < offset + LZ11_MIN_MATCH_LENGTH {
-      return Vec::new();
-    }
-
-    let hash_value = Self::hash(data, offset);
-    let mut match_candidate = self.head[hash_value];
-
-    let lowest_position = offset.saturating_sub(WINDOW_SIZE);
-    let match_limit = LZ11_MAX_MATCH_LENGTH.min(data.len() - offset);
-
-    let mut steps = 0;
-    let mut matches: Vec<(usize, usize)> = Vec::new();
-
-    while match_candidate != usize::MAX && match_candidate >= lowest_position && steps < HASH_MAX_CHAIN {
-      // Skip over self-references
-      if match_candidate >= offset {
-        match_candidate = self.prev[match_candidate % WINDOW_SIZE];
-        steps += 1;
-        continue;
-      }
-
-      let mut len = 0;
-      while len < match_limit && data[match_candidate + len] == data[offset + len] {
-        len += 1;
-      }
-
-      if len >= LZ11_MIN_MATCH_LENGTH {
-        matches.push((match_candidate, len));
-      }
-
-      match_candidate = self.prev[match_candidate % WINDOW_SIZE];
-      steps += 1;
-    }
-
-    matches
-  }
 }
 
 fn encoding_cost(length: usize) -> usize {
