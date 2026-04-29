@@ -1,8 +1,21 @@
 [package]
 name = "lz11"
-version = "0.1.0"
+description = "Library and command-line tool for working with Nintendo's LZ10 and LZ11 compression formats"
+categories = ["command-line-utilities", "compression"]
+keywords = ["lz10", "lz11", "nintendo"]
+version = "1.0.0"
 edition = "2024"
-exclude = ["resources/"]
+rust-version = "1.85"
+exclude = [
+  "/docs/",
+  "/resources/",
+  "/tests/",
+  "/.github/",
+  ".gitignore",
+]
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+
 
 [features]
 cli = ["clap"]
