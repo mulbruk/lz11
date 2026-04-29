@@ -159,7 +159,7 @@ pub fn compress_lz(data: &[u8], format: Format, strategy: Strategy, max_chain: u
     Strategy::Optimal => compress_optimal(data, format, &mut result),
   }
 
-  // Write footer
+  // Write trailing 0xff for compatibility with other LZ10/LZ11 tool implementations
   result.push(0xff);
 
   Ok(result)
