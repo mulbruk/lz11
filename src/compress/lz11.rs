@@ -9,144 +9,98 @@ const LZ11_MAX_INPUT_LENGTH: usize = 0xFFFFFFFF;
 
 const LZ_MIN_MATCH_LENGTH: usize = 3;
 
-// LZ Context --------------------------------------------------
-trait LZContext {
-  fn write_compressed_block(&mut self, offset: usize, match_start: usize, match_length: usize, result: &mut Vec<u8>);
-  fn write_uncompressed_byte(&mut self, byte: u8, result: &mut Vec<u8>);
-  fn flush(&mut self, result: &mut Vec<u8>);
-}
-
 const FLAG_MASKS: [u8; 8] = [0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
 
 // LZ10 Context ------------------------------------------------
-struct LZ10Context {
+struct LZContext {
+  format: Format,
   flag_byte: u8,
   blocks: Vec<u8>,
   block_index: usize,
 }
 
-impl LZ10Context {
-  fn new() -> Self {
-    LZ10Context {
+impl LZContext {
+  fn new(format: Format) -> Self {
+    LZContext {
+      format,
       flag_byte: 0,
       blocks: Vec::new(),
       block_index: 0,
     }
   }
-}
 
-impl LZContext for LZ10Context {
   fn write_compressed_block(&mut self, offset: usize, match_start: usize, match_length: usize, result: &mut Vec<u8>) {
-    // Compressed block
-    let length = match_length;
-    let displacement = offset - match_start - 1;
-    
-    // 2-byte encoding
-    let block: [u8; 2] = [
-      ((length - 3) << 4) as u8 | ((displacement >> 8) as u8),
-      (displacement & 0xFF) as u8,
-    ];
+    match self.format {
+      Format::LZ10 => {
+        // Compressed block
+        let length = match_length;
+        let displacement = offset - match_start - 1;
+        
+        // 2-byte encoding
+        let block: [u8; 2] = [
+          ((length - 3) << 4) as u8 | ((displacement >> 8) as u8),
+          (displacement & 0xFF) as u8,
+        ];
 
-    self.flag_byte |= FLAG_MASKS[self.block_index];
-    self.blocks.extend_from_slice(&block);
-  
+        self.flag_byte |= FLAG_MASKS[self.block_index];
+        self.blocks.extend_from_slice(&block);
 
-    self.block_index += 1;
-    if self.block_index >= 8 {
-      result.push(self.flag_byte);
-      result.extend_from_slice(&self.blocks);
-      self.flag_byte = 0;
-      self.blocks.clear();
-      self.block_index = 0;
-    }
-  }
 
-  fn write_uncompressed_byte(&mut self, byte: u8, result: &mut Vec<u8>) {
-    self.blocks.push(byte);
+        self.block_index += 1;
+        if self.block_index >= 8 {
+          result.push(self.flag_byte);
+          result.extend_from_slice(&self.blocks);
+          self.flag_byte = 0;
+          self.blocks.clear();
+          self.block_index = 0;
+        }
+      },
+      Format::LZ11 => {
+        // Compressed block
+        let length = match_length;
+        let displacement = offset - match_start - 1;
+        
+        if match_length >= 0x111 {
+          // 4-byte encoding
+          let block: [u8; 4] = [
+            0x10 | ((length - 0x111) >> 12) as u8,
+            ((length - 0x111) >> 4) as u8,
+            (((length - 0x111) << 4) as u8) | ((displacement >> 8) as u8),
+            (displacement & 0xFF) as u8,
+          ];
 
-    self.block_index += 1;
-    if self.block_index >= 8 {
-      result.push(self.flag_byte);
-      result.extend_from_slice(&self.blocks);
-      self.flag_byte = 0;
-      self.blocks.clear();
-      self.block_index = 0;
-    }
-  }
+          self.flag_byte |= FLAG_MASKS[self.block_index];
+          self.blocks.extend_from_slice(&block);
+        } else if match_length >= 0x11 {
+          // 3-byte encoding
+          let block: [u8; 3] = [
+            ((length - 0x11) >> 4) as u8,
+            (((length - 0x11) << 4) as u8) | ((displacement >> 8) as u8),
+            (displacement & 0xFF) as u8,
+          ];
 
-  fn flush(&mut self, result: &mut Vec<u8>) {
-    if self.block_index > 0 {
-      result.push(self.flag_byte);
-      result.extend_from_slice(&self.blocks);
-      self.flag_byte = 0;
-      self.blocks.clear();
-      self.block_index = 0;
-    }
-  }
-}
+          self.flag_byte |= FLAG_MASKS[self.block_index];
+          self.blocks.extend_from_slice(&block);
+        } else {
+          // 2-byte encoding
+          let block: [u8; 2] = [
+            ((length - 1) << 4) as u8 | ((displacement >> 8) as u8),
+            (displacement & 0xFF) as u8,
+          ];
 
-// LZ11 Context ------------------------------------------------
-struct LZ11Context {
-  flag_byte: u8,
-  blocks: Vec<u8>,
-  block_index: usize,
-}
+          self.flag_byte |= FLAG_MASKS[self.block_index];
+          self.blocks.extend_from_slice(&block);
+        }
 
-impl LZ11Context {
-  fn new() -> Self {
-    LZ11Context {
-      flag_byte: 0,
-      blocks: Vec::new(),
-      block_index: 0,
-    }
-  }
-}
-
-impl LZContext for LZ11Context {
-  fn write_compressed_block(&mut self, offset: usize, match_start: usize, match_length: usize, result: &mut Vec<u8>) {
-    // Compressed block
-    let length = match_length;
-    let displacement = offset - match_start - 1;
-    
-    if match_length >= 0x111 {
-      // 4-byte encoding
-      let block: [u8; 4] = [
-        0x10 | ((length - 0x111) >> 12) as u8,
-        ((length - 0x111) >> 4) as u8,
-        (((length - 0x111) << 4) as u8) | ((displacement >> 8) as u8),
-        (displacement & 0xFF) as u8,
-      ];
-
-      self.flag_byte |= FLAG_MASKS[self.block_index];
-      self.blocks.extend_from_slice(&block);
-    } else if match_length >= 0x11 {
-      // 3-byte encoding
-      let block: [u8; 3] = [
-        ((length - 0x11) >> 4) as u8,
-        (((length - 0x11) << 4) as u8) | ((displacement >> 8) as u8),
-        (displacement & 0xFF) as u8,
-      ];
-
-      self.flag_byte |= FLAG_MASKS[self.block_index];
-      self.blocks.extend_from_slice(&block);
-    } else {
-      // 2-byte encoding
-      let block: [u8; 2] = [
-        ((length - 1) << 4) as u8 | ((displacement >> 8) as u8),
-        (displacement & 0xFF) as u8,
-      ];
-
-      self.flag_byte |= FLAG_MASKS[self.block_index];
-      self.blocks.extend_from_slice(&block);
-    }
-
-    self.block_index += 1;
-    if self.block_index >= 8 {
-      result.push(self.flag_byte);
-      result.extend_from_slice(&self.blocks);
-      self.flag_byte = 0;
-      self.blocks.clear();
-      self.block_index = 0;
+        self.block_index += 1;
+        if self.block_index >= 8 {
+          result.push(self.flag_byte);
+          result.extend_from_slice(&self.blocks);
+          self.flag_byte = 0;
+          self.blocks.clear();
+          self.block_index = 0;
+        }
+      },
     }
   }
 
@@ -234,10 +188,7 @@ pub fn compress(data: &[u8], format: Format, level: usize) -> Result<Vec<u8>, LZ
 
 // Greedy Hash Chain -------------------------------------------
 fn compress_greedy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec<u8>) {
-  let mut lz_context: Box<dyn LZContext> = match format {
-    Format::LZ10 => Box::new(LZ10Context::new()),
-    Format::LZ11 => Box::new(LZ11Context::new()),
-  };
+  let mut lz_context = LZContext::new(format);
   let mut matcher = HashMatcher::new(format, max_chain);
 
   // Write compressed data
@@ -264,10 +215,7 @@ fn compress_greedy(data: &[u8], format: Format, max_chain: usize, result: &mut V
 
 // Lazy Hash Chain ---------------------------------------------
 fn compress_lazy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec<u8>) {
-  let mut lz_context: Box<dyn LZContext> = match format {
-    Format::LZ10 => Box::new(LZ10Context::new()),
-    Format::LZ11 => Box::new(LZ11Context::new()),
-  };
+  let mut lz_context = LZContext::new(format);
   let mut matcher = HashMatcher::new(format, max_chain);
 
   // Write compressed data
@@ -338,10 +286,7 @@ fn compress_lazy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec
 
 // Optimal Parsing ---------------------------------------------
 fn compress_optimal(data: &[u8], format: Format, result: &mut Vec<u8>) {
-  let mut lz_context: Box<dyn LZContext> = match format {
-    Format::LZ10 => Box::new(LZ10Context::new()),
-    Format::LZ11 => Box::new(LZ11Context::new()),
-  };
+  let mut lz_context = LZContext::new(format);
   let choices = optimal_parse(data, format);
 
   let mut n = 0;
