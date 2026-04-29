@@ -120,13 +120,13 @@ impl LZContext {
 
 // Compression -------------------------------------------------
 #[derive(Clone, Copy)]
-pub enum Strategy {
+enum Strategy {
   Greedy,
   Lazy,
   Optimal,
 }
 
-pub fn compress_lz(data: &[u8], format: Format, strategy: Strategy, max_chain: usize) -> Result<Vec<u8>, LZError> {
+fn compress_lz(data: &[u8], format: Format, strategy: Strategy, max_chain: usize) -> Result<Vec<u8>, LZError> {
   if (format == Format::LZ10 && data.len() > LZ10_MAX_INPUT_LENGTH) || (format == Format::LZ11 && data.len() > LZ11_MAX_INPUT_LENGTH) {
     return Err(LZError::InputTooLarge);
   }
@@ -171,6 +171,17 @@ fn compression_level(level: usize) -> Result<(Strategy, usize), LZError> {
   }
 }
 
+/// Compresses data with the given format and compression level.
+///
+/// Compression level controls the trade-off between speed and compression ratio, ranging
+/// from 1 (fastest, least compression) to 9 (slowest, best compression). Levels 5 and
+/// higher generally produce smaller results than the compressor that was included in Nintendo's
+/// SDK.
+/// 
+/// # Errors
+/// - LZError::InvalidCompressionLevel when `level` is not in the range 1-9.
+/// - LZError::InputTooLarge when `data` exceeds the maximum input size for the format
+///   (16,777,215 bytes for LZ10, ~4 GiB for LZ11).
 pub fn compress(data: &[u8], format: Format, level: usize) -> Result<Vec<u8>, LZError> {
   let (strategy, max_chain) = compression_level(level)?;
   compress_lz(data, format, strategy, max_chain)

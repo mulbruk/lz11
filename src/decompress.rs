@@ -4,6 +4,14 @@ use std::io::{Cursor, Read};
 use crate::error::LZError;
 use crate::format::Format;
 
+/// Decompresses LZ10 or LZ11 compressed data.
+///
+/// The format is inferred from the magic byte in the header.
+///
+/// # Errors
+/// - LZError::HeaderTooShort if `data` is too short to contain a valid header.
+/// - LZError::InvalidMagicNumber if the first byte is not `0x10` or `0x11`.
+/// - LZError::DataTooShort if the compressed data is truncated.
 pub fn decompress(data: &[u8]) -> Result<Vec<u8>, LZError> {
   let mut cursor = Cursor::new(data);
 
