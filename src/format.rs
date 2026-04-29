@@ -7,7 +7,7 @@ use clap::ValueEnum;
 ///
 /// LZ10 supports data up to 2^24 bytes in length, and encodes references using a fixed 2-byte
 /// format supporting match lengths of 3-18 bytes.
-/// 
+///
 /// LZ11 extends this to support data up to 2^32 bytes in length, with variable-length encoding
 /// (2-4 bytes) supporting match lengths up to 65,808 bytes. This generally produces better
 /// compression ratios than LZ10.

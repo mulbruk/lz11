@@ -6,9 +6,9 @@ const LZ10_MAX_MATCH_LENGTH: usize = 18;
 const LZ11_MAX_MATCH_LENGTH: usize = 65808; // (2^16 - 1) + 0x111
 
 const WINDOW_SIZE: usize = 0x1000; // 4096 byte sliding window
-const HASH_BITS: usize = 12;       // 4096 possible hash values -> log2(4096) bits
+const HASH_BITS: usize = 12; // 4096 possible hash values -> log2(4096) bits
 const HASH_SIZE: usize = 1 << HASH_BITS; // 4096
-const HASH_MASK: usize = HASH_SIZE - 1;  // 4095
+const HASH_MASK: usize = HASH_SIZE - 1; // 4095
 
 // Matcher -----------------------------------------------------
 pub(crate) struct HashMatcher {
@@ -76,7 +76,10 @@ impl HashMatcher {
     let mut match_start = 0;
     let mut steps = 0;
 
-    while match_candidate != usize::MAX && match_candidate >= lowest_position && steps < self.max_chain {
+    while match_candidate != usize::MAX
+      && match_candidate >= lowest_position
+      && steps < self.max_chain
+    {
       // Skip over self-references
       if match_candidate >= offset {
         match_candidate = self.prev[match_candidate % WINDOW_SIZE];

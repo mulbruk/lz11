@@ -4,10 +4,7 @@ use std::process;
 
 use clap::Parser;
 
-use lz11::{
-  Format, LZError, Strategy,
-  compress, decompress,
-};
+use lz11::{Format, LZError, Strategy, compress, decompress};
 
 #[derive(Parser)]
 struct Args {
@@ -46,7 +43,12 @@ fn cmd_decompress(input: &Path, output: &Path) -> Result<(), Box<dyn std::error:
   Ok(())
 }
 
-fn cmd_compress(input: &Path, output: &Path, format: Format, level: usize) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_compress(
+  input: &Path,
+  output: &Path,
+  format: Format,
+  level: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
   let data = fs::read(input)?;
   let compressed_data = compress(&data, format, level)?;
   fs::write(output, compressed_data)?;
@@ -63,7 +65,12 @@ fn main() {
         process::exit(1);
       }
     }
-    Commands::Compress { input, output, format, level } => {
+    Commands::Compress {
+      input,
+      output,
+      format,
+      level,
+    } => {
       if let Err(e) = cmd_compress(&input, &output, format, level) {
         eprintln!("Error: {}", e);
         process::exit(1);

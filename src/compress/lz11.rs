@@ -29,13 +29,19 @@ impl LZContext {
     }
   }
 
-  fn write_compressed_block(&mut self, offset: usize, match_start: usize, match_length: usize, result: &mut Vec<u8>) {
+  fn write_compressed_block(
+    &mut self,
+    offset: usize,
+    match_start: usize,
+    match_length: usize,
+    result: &mut Vec<u8>,
+  ) {
     match self.format {
       Format::LZ10 => {
         // Compressed block
         let length = match_length;
         let displacement = offset - match_start - 1;
-        
+
         // 2-byte encoding
         let block: [u8; 2] = [
           ((length - 3) << 4) as u8 | ((displacement >> 8) as u8),
@@ -44,12 +50,12 @@ impl LZContext {
 
         self.flag_byte |= FLAG_MASKS[self.block_index];
         self.blocks.extend_from_slice(&block);
-      },
+      }
       Format::LZ11 => {
         // Compressed block
         let length = match_length;
         let displacement = offset - match_start - 1;
-        
+
         if match_length >= 0x111 {
           // 4-byte encoding
           let block: [u8; 4] = [
@@ -81,7 +87,7 @@ impl LZContext {
           self.flag_byte |= FLAG_MASKS[self.block_index];
           self.blocks.extend_from_slice(&block);
         }
-      },
+      }
     }
 
     self.block_index += 1;
@@ -126,8 +132,15 @@ enum Strategy {
   Optimal,
 }
 
-fn compress_lz(data: &[u8], format: Format, strategy: Strategy, max_chain: usize) -> Result<Vec<u8>, LZError> {
-  if (format == Format::LZ10 && data.len() > LZ10_MAX_INPUT_LENGTH) || (format == Format::LZ11 && data.len() > LZ11_MAX_INPUT_LENGTH) {
+fn compress_lz(
+  data: &[u8],
+  format: Format,
+  strategy: Strategy,
+  max_chain: usize,
+) -> Result<Vec<u8>, LZError> {
+  if (format == Format::LZ10 && data.len() > LZ10_MAX_INPUT_LENGTH)
+    || (format == Format::LZ11 && data.len() > LZ11_MAX_INPUT_LENGTH)
+  {
     return Err(LZError::InputTooLarge);
   }
 
@@ -177,7 +190,7 @@ fn compression_level(level: usize) -> Result<(Strategy, usize), LZError> {
 /// from 1 (fastest, least compression) to 9 (slowest, best compression). Levels 5 and
 /// higher generally produce smaller results than the compressor that was included in Nintendo's
 /// SDK.
-/// 
+///
 /// # Errors
 /// - LZError::InvalidCompressionLevel when `level` is not in the range 1-9.
 /// - LZError::InputTooLarge when `data` exceeds the maximum input size for the format
@@ -198,14 +211,14 @@ fn compress_greedy(data: &[u8], format: Format, max_chain: usize, result: &mut V
     matcher.insert(data, n);
     if let Some((match_start, match_length)) = matcher.find_longest_match(data, n) {
       lz_context.write_compressed_block(n, match_start, match_length, result);
-      
+
       for skipped in 1..match_length {
-          matcher.insert(data, n + skipped);
+        matcher.insert(data, n + skipped);
       }
       n += match_length;
     } else {
       lz_context.write_uncompressed_byte(data[n], result);
-      
+
       n += 1;
     }
   }
@@ -238,32 +251,32 @@ fn compress_lazy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec
           lz_context.write_uncompressed_byte(data[n], result);
           lz_context.write_uncompressed_byte(data[n + 1], result);
           n += 2;
-        },
-        
+        }
+
         (Some((match_start, match_length)), None) => {
           lz_context.write_compressed_block(n, match_start, match_length, result);
           for skipped in 2..match_length {
             matcher.insert(data, n + skipped);
           }
           n += match_length;
-        },
+        }
 
         (None, Some((match_start, match_length))) => {
           lz_context.write_uncompressed_byte(data[n], result);
           n += 1;
-          
+
           lz_context.write_compressed_block(n, match_start, match_length, result);
           for skipped in 1..match_length {
             matcher.insert(data, n + skipped);
           }
           n += match_length;
-        },
+        }
 
         (Some((match_start_1, match_length_1)), Some((match_start_2, match_length_2))) => {
           if match_length_2 > match_length_1 {
             lz_context.write_uncompressed_byte(data[n], result);
             n += 1;
-            
+
             lz_context.write_compressed_block(n, match_start_2, match_length_2, result);
             for skipped in 1..match_length_2 {
               matcher.insert(data, n + skipped);
@@ -276,7 +289,7 @@ fn compress_lazy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec
             }
             n += match_length_1;
           }
-        },
+        }
       }
     }
   }
@@ -304,7 +317,7 @@ fn compress_optimal(data: &[u8], format: Format, result: &mut Vec<u8>) {
       }
     }
   }
-  
+
   lz_context.flush(result);
 }
 
@@ -322,16 +335,18 @@ fn encoding_cost(format: Format, length: usize) -> usize {
     9
   } else {
     match format {
-      Format::LZ10 => 17, 
-      Format::LZ11 => if length <= 16 {
-        // 2-byte reference
-        17
-      } else if length <= 272 {
-        // 3-byte reference
-        25
-      } else {
-        // 4-byte reference
-        33
+      Format::LZ10 => 17,
+      Format::LZ11 => {
+        if length <= 16 {
+          // 2-byte reference
+          17
+        } else if length <= 272 {
+          // 3-byte reference
+          25
+        } else {
+          // 4-byte reference
+          33
+        }
       }
     }
   }
@@ -360,18 +375,21 @@ fn optimal_parse(data: &[u8], format: Format) -> Vec<Choice> {
 
     // Option 2: find best match at position n
     if let Some((match_start, match_length)) = matcher.find_longest_match(data, n) {
-      let min_length: usize = LZ_MIN_MATCH_LENGTH;                                                                                                                                                      
+      let min_length: usize = LZ_MIN_MATCH_LENGTH;
       let max_length: usize = match_length.min(data_len - 1);
-                                                                                                                                                                                                        
-      for length in min_length..=max_length {
-          let ref_cost = costs[n] + encoding_cost(format, length);                                                                                                                                              
-          let target = n + length;
 
-          if ref_cost < costs[target] {
-              costs[target] = ref_cost;
-              choices[target] = Choice::Reference { length, offset: match_start };                                                                                                                      
-          }
-      }                                                                                                                                                                                                 
+      for length in min_length..=max_length {
+        let ref_cost = costs[n] + encoding_cost(format, length);
+        let target = n + length;
+
+        if ref_cost < costs[target] {
+          costs[target] = ref_cost;
+          choices[target] = Choice::Reference {
+            length,
+            offset: match_start,
+          };
+        }
+      }
     }
 
     matcher.insert(data, n);

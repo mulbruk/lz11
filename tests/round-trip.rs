@@ -1,4 +1,4 @@
-use lz11::{compress, decompress, Format};
+use lz11::{Format, compress, decompress};
 
 macro_rules! round_trip_test_files {
   ($($name:ident: $format:expr, $file:expr), *) => {
