@@ -44,16 +44,6 @@ impl LZContext {
 
         self.flag_byte |= FLAG_MASKS[self.block_index];
         self.blocks.extend_from_slice(&block);
-
-
-        self.block_index += 1;
-        if self.block_index >= 8 {
-          result.push(self.flag_byte);
-          result.extend_from_slice(&self.blocks);
-          self.flag_byte = 0;
-          self.blocks.clear();
-          self.block_index = 0;
-        }
       },
       Format::LZ11 => {
         // Compressed block
@@ -91,16 +81,16 @@ impl LZContext {
           self.flag_byte |= FLAG_MASKS[self.block_index];
           self.blocks.extend_from_slice(&block);
         }
-
-        self.block_index += 1;
-        if self.block_index >= 8 {
-          result.push(self.flag_byte);
-          result.extend_from_slice(&self.blocks);
-          self.flag_byte = 0;
-          self.blocks.clear();
-          self.block_index = 0;
-        }
       },
+    }
+
+    self.block_index += 1;
+    if self.block_index >= 8 {
+      result.push(self.flag_byte);
+      result.extend_from_slice(&self.blocks);
+      self.flag_byte = 0;
+      self.blocks.clear();
+      self.block_index = 0;
     }
   }
 

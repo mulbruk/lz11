@@ -108,44 +108,4 @@ impl HashMatcher {
       Some((match_start, longest_match))
     }
   }
-
-  /// Returns a vector containing the offset and length of each match found for the given offset.
-  /// The search is limited to the sliding window and the maximum match length.
-  pub fn find_matches(&self, data: &[u8], offset: usize) -> Vec<(usize, usize)> {
-    if offset < LZ_MIN_MATCH_LENGTH || data.len() < offset + LZ_MIN_MATCH_LENGTH {
-      return Vec::new();
-    }
-
-    let hash_value = Self::hash(data, offset);
-    let mut match_candidate = self.head[hash_value];
-
-    let lowest_position = offset.saturating_sub(WINDOW_SIZE);
-    let match_limit = self.max_match.min(data.len() - offset);
-
-    let mut steps = 0;
-    let mut matches: Vec<(usize, usize)> = Vec::new();
-
-    while match_candidate != usize::MAX && match_candidate >= lowest_position && steps < self.max_chain {
-      // Skip over self-references
-      if match_candidate >= offset {
-        match_candidate = self.prev[match_candidate % WINDOW_SIZE];
-        steps += 1;
-        continue;
-      }
-
-      let mut len = 0;
-      while len < match_limit && data[match_candidate + len] == data[offset + len] {
-        len += 1;
-      }
-
-      if len >= LZ_MIN_MATCH_LENGTH {
-        matches.push((match_candidate, len));
-      }
-
-      match_candidate = self.prev[match_candidate % WINDOW_SIZE];
-      steps += 1;
-    }
-
-    matches
-  }
 }
