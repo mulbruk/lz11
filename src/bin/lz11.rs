@@ -5,8 +5,8 @@ use std::process;
 use clap::Parser;
 
 use lz11::{
-  Format, LZError, LZ11Strategy,
-  compress_lz11, decompress,
+  Format, LZError, Strategy,
+  compress, decompress,
 };
 
 #[derive(Parser)]
@@ -23,9 +23,12 @@ enum Commands {
     input: PathBuf,
     /// Output file path
     output: PathBuf,
-    /// Compression strategy (greedy, lazy, optimal)
-    #[arg(short, long, default_value = "greedy")]
-    strategy: LZ11Strategy,
+    /// Compression format (lz10 or lz11)
+    #[arg(short, long, default_value = "lz11")]
+    format: Format,
+    /// Compression level (1-9)
+    #[arg(short = 'o', default_value_t = 5)]
+    level: usize,
   },
   /// Decompress an LZ10 or LZ11 compressed file
   Decompress {
@@ -43,9 +46,9 @@ fn cmd_decompress(input: &PathBuf, output: &PathBuf) -> Result<(), Box<dyn std::
   Ok(())
 }
 
-fn cmd_compress(input: &PathBuf, output: &PathBuf, strategy: LZ11Strategy) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_compress(input: &PathBuf, output: &PathBuf, format: Format, level: usize) -> Result<(), Box<dyn std::error::Error>> {
   let data = fs::read(input)?;
-  let compressed_data = compress_lz11(&data, strategy)?;
+  let compressed_data = compress(&data, format, level)?;
   fs::write(output, compressed_data)?;
   Ok(())
 }
@@ -60,8 +63,8 @@ fn main() {
         process::exit(1);
       }
     }
-    Commands::Compress { input, output, strategy } => {
-      if let Err(e) = cmd_compress(&input, &output, strategy) {
+    Commands::Compress { input, output, format, level } => {
+      if let Err(e) = cmd_compress(&input, &output, format, level) {
         eprintln!("Error: {}", e);
         process::exit(1);
       }

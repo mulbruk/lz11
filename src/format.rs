@@ -1,6 +1,10 @@
 use crate::error::LZError;
 
-#[derive(Debug, PartialEq, Eq)]
+#[cfg(feature = "cli")]
+use clap::ValueEnum;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "cli", derive(ValueEnum))]
 #[repr(u8)]
 pub enum Format {
   LZ10 = 0x10,

@@ -1,19 +1,91 @@
 use crate::error::LZError;
 use crate::format::Format;
 
-#[cfg(feature = "cli")]
-use clap::ValueEnum;
-
 use super::hash_matcher::HashMatcher;
 
-// LZ11 Constants ----------------------------------------------
+// Constants ---------------------------------------------------
+const LZ10_MAX_INPUT_LENGTH: usize = 0x1000000;
 const LZ11_MAX_INPUT_LENGTH: usize = 0xFFFFFFFF;
-const LZ11_MIN_MATCH_LENGTH: usize = 3;
-const LZ11_MAX_MATCH_LENGTH: usize = 65808; // (2^16 - 1) + 0x111
 
-// LZ11 Context ------------------------------------------------
+const LZ_MIN_MATCH_LENGTH: usize = 3;
+
+// LZ Context --------------------------------------------------
+trait LZContext {
+  fn write_compressed_block(&mut self, offset: usize, match_start: usize, match_length: usize, result: &mut Vec<u8>);
+  fn write_uncompressed_byte(&mut self, byte: u8, result: &mut Vec<u8>);
+  fn flush(&mut self, result: &mut Vec<u8>);
+}
+
 const FLAG_MASKS: [u8; 8] = [0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
 
+// LZ110 Context -----------------------------------------------
+struct LZ10Context {
+  flag_byte: u8,
+  blocks: Vec<u8>,
+  block_index: usize,
+}
+
+impl LZ10Context {
+  fn new() -> Self {
+    LZ10Context {
+      flag_byte: 0,
+      blocks: Vec::new(),
+      block_index: 0,
+    }
+  }
+}
+
+impl LZContext for LZ10Context {
+  fn write_compressed_block(&mut self, offset: usize, match_start: usize, match_length: usize, result: &mut Vec<u8>) {
+    // Compressed block
+    let length = match_length;
+    let displacement = offset - match_start - 1;
+    
+    // 2-byte encoding
+    let block: [u8; 2] = [
+      ((length - 3) << 4) as u8 | ((displacement >> 8) as u8),
+      (displacement & 0xFF) as u8,
+    ];
+
+    self.flag_byte |= FLAG_MASKS[self.block_index];
+    self.blocks.extend_from_slice(&block);
+  
+
+    self.block_index += 1;
+    if self.block_index >= 8 {
+      result.push(self.flag_byte);
+      result.extend_from_slice(&self.blocks);
+      self.flag_byte = 0;
+      self.blocks.clear();
+      self.block_index = 0;
+    }
+  }
+
+  fn write_uncompressed_byte(&mut self, byte: u8, result: &mut Vec<u8>) {
+    self.blocks.push(byte);
+
+    self.block_index += 1;
+    if self.block_index >= 8 {
+      result.push(self.flag_byte);
+      result.extend_from_slice(&self.blocks);
+      self.flag_byte = 0;
+      self.blocks.clear();
+      self.block_index = 0;
+    }
+  }
+
+  fn flush(&mut self, result: &mut Vec<u8>) {
+    if self.block_index > 0 {
+      result.push(self.flag_byte);
+      result.extend_from_slice(&self.blocks);
+      self.flag_byte = 0;
+      self.blocks.clear();
+      self.block_index = 0;
+    }
+  }
+}
+
+// LZ11 Context ------------------------------------------------
 struct LZ11Context {
   flag_byte: u8,
   blocks: Vec<u8>,
@@ -28,7 +100,9 @@ impl LZ11Context {
       block_index: 0,
     }
   }
+}
 
+impl LZContext for LZ11Context {
   fn write_compressed_block(&mut self, offset: usize, match_start: usize, match_length: usize, result: &mut Vec<u8>) {
     // Compressed block
     let length = match_length;
@@ -100,17 +174,16 @@ impl LZ11Context {
   }
 }
 
-// LZ11 Compression --------------------------------------------
+// Compression -------------------------------------------------
 #[derive(Clone, Copy)]
-#[cfg_attr(feature = "cli", derive(ValueEnum))]
-pub enum LZ11Strategy {
+pub enum Strategy {
   Greedy,
   Lazy,
   Optimal,
 }
 
-pub fn compress_lz11(data: &[u8], strategy: LZ11Strategy) -> Result<Vec<u8>, LZError> {
-  if data.len() > LZ11_MAX_INPUT_LENGTH {
+pub fn compress_lz(data: &[u8], format: Format, strategy: Strategy, max_chain: usize) -> Result<Vec<u8>, LZError> {
+  if (format == Format::LZ10 && data.len() > LZ10_MAX_INPUT_LENGTH) || (format == Format::LZ11 && data.len() > LZ11_MAX_INPUT_LENGTH) {
     return Err(LZError::InputTooLarge);
   }
 
@@ -118,7 +191,7 @@ pub fn compress_lz11(data: &[u8], strategy: LZ11Strategy) -> Result<Vec<u8>, LZE
   let mut result: Vec<u8> = Vec::new();
 
   // Write header
-  result.push(Format::LZ11 as u8);
+  result.push(format as u8);
   if data.len() < 0x1000000 {
     result.extend_from_slice(&(data.len() as u32).to_le_bytes()[..3]);
   } else {
@@ -127,9 +200,9 @@ pub fn compress_lz11(data: &[u8], strategy: LZ11Strategy) -> Result<Vec<u8>, LZE
   }
 
   match strategy {
-    LZ11Strategy::Greedy => compress_lz11_greedy(data, &mut result),
-    LZ11Strategy::Lazy => compress_lz11_lazy(data, &mut result),
-    LZ11Strategy::Optimal => compress_lz11_optimal(data, &mut result),
+    Strategy::Greedy => compress_greedy(data, format, max_chain, &mut result),
+    Strategy::Lazy => compress_lazy(data, format, max_chain, &mut result),
+    Strategy::Optimal => compress_optimal(data, format, &mut result),
   }
 
   // Write footer
@@ -138,44 +211,71 @@ pub fn compress_lz11(data: &[u8], strategy: LZ11Strategy) -> Result<Vec<u8>, LZE
   Ok(result)
 }
 
+// Compression Interface ---------------------------------------
+fn compression_level(level: usize) -> Result<(Strategy, usize), LZError> {
+  match level {
+    1 => Ok((Strategy::Greedy, 64)),
+    2 => Ok((Strategy::Greedy, 128)),
+    3 => Ok((Strategy::Greedy, 256)),
+    4 => Ok((Strategy::Greedy, 512)),
+    5 => Ok((Strategy::Lazy, 64)),
+    6 => Ok((Strategy::Lazy, 128)),
+    7 => Ok((Strategy::Lazy, 256)),
+    8 => Ok((Strategy::Lazy, 512)),
+    9 => Ok((Strategy::Optimal, 0)),
+    _ => Err(LZError::InvalidCompressionLevel(level)),
+  }
+}
+
+pub fn compress(data: &[u8], format: Format, level: usize) -> Result<Vec<u8>, LZError> {
+  let (strategy, max_chain) = compression_level(level)?;
+  compress_lz(data, format, strategy, max_chain)
+}
+
 // Greedy Hash Chain -------------------------------------------
-fn compress_lz11_greedy(data: &[u8], result: &mut Vec<u8>) {
-  let mut lz11_context = LZ11Context::new();
-  let mut matcher = HashMatcher::new();
+fn compress_greedy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec<u8>) {
+  let mut lz_context: Box<dyn LZContext> = match format {
+    Format::LZ10 => Box::new(LZ10Context::new()),
+    Format::LZ11 => Box::new(LZ11Context::new()),
+  };
+  let mut matcher = HashMatcher::new(format, max_chain);
 
   // Write compressed data
   let mut n = 0;
   while n < data.len() {
     matcher.insert(data, n);
     if let Some((match_start, match_length)) = matcher.find_longest_match(data, n) {
-      lz11_context.write_compressed_block(n, match_start, match_length, &mut *result);
+      lz_context.write_compressed_block(n, match_start, match_length, &mut *result);
       
       for skipped in 1..match_length {
           matcher.insert(data, n + skipped);
       }
       n += match_length;
     } else {
-      lz11_context.write_uncompressed_byte(data[n], &mut *result);
+      lz_context.write_uncompressed_byte(data[n], &mut *result);
       
       n += 1;
     }
   }
 
   // Flush remaining blocks
-  lz11_context.flush(&mut *result);
+  lz_context.flush(&mut *result);
 }
 
 // Lazy Hash Chain ---------------------------------------------
-fn compress_lz11_lazy(data: &[u8], result: &mut Vec<u8>) {
-  let mut lz11_context = LZ11Context::new();
-  let mut matcher = HashMatcher::new();
+fn compress_lazy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec<u8>) {
+  let mut lz_context: Box<dyn LZContext> = match format {
+    Format::LZ10 => Box::new(LZ10Context::new()),
+    Format::LZ11 => Box::new(LZ11Context::new()),
+  };
+  let mut matcher = HashMatcher::new(format, max_chain);
 
   // Write compressed data
   let mut n = 0;
   while n < data.len() {
     if n >= data.len() - 3 {
       // Not enough bytes left for a match, so just write uncompressed bytes
-      lz11_context.write_uncompressed_byte(data[n], &mut *result);
+      lz_context.write_uncompressed_byte(data[n], &mut *result);
       n += 1;
       continue;
     } else {
@@ -186,13 +286,13 @@ fn compress_lz11_lazy(data: &[u8], result: &mut Vec<u8>) {
 
       match (match_1, match_2) {
         (None, None) => {
-          lz11_context.write_uncompressed_byte(data[n], &mut *result);
-          lz11_context.write_uncompressed_byte(data[n + 1], &mut *result);
+          lz_context.write_uncompressed_byte(data[n], &mut *result);
+          lz_context.write_uncompressed_byte(data[n + 1], &mut *result);
           n += 2;
         },
         
         (Some((match_start, match_length)), None) => {
-          lz11_context.write_compressed_block(n, match_start, match_length, &mut *result);
+          lz_context.write_compressed_block(n, match_start, match_length, &mut *result);
           for skipped in 2..match_length {
             matcher.insert(data, n + skipped);
           }
@@ -200,10 +300,10 @@ fn compress_lz11_lazy(data: &[u8], result: &mut Vec<u8>) {
         },
 
         (None, Some((match_start, match_length))) => {
-          lz11_context.write_uncompressed_byte(data[n], &mut *result);
+          lz_context.write_uncompressed_byte(data[n], &mut *result);
           n += 1;
           
-          lz11_context.write_compressed_block(n, match_start, match_length, &mut *result);
+          lz_context.write_compressed_block(n, match_start, match_length, &mut *result);
           for skipped in 1..match_length {
             matcher.insert(data, n + skipped);
           }
@@ -212,16 +312,16 @@ fn compress_lz11_lazy(data: &[u8], result: &mut Vec<u8>) {
 
         (Some((match_start_1, match_length_1)), Some((match_start_2, match_length_2))) => {
           if match_length_2 > match_length_1 {
-            lz11_context.write_uncompressed_byte(data[n], &mut *result);
+            lz_context.write_uncompressed_byte(data[n], &mut *result);
             n += 1;
             
-            lz11_context.write_compressed_block(n, match_start_2, match_length_2, &mut *result);
+            lz_context.write_compressed_block(n, match_start_2, match_length_2, &mut *result);
             for skipped in 1..match_length_2 {
               matcher.insert(data, n + skipped);
             }
             n += match_length_2;
           } else {
-            lz11_context.write_compressed_block(n, match_start_1, match_length_1, &mut *result);
+            lz_context.write_compressed_block(n, match_start_1, match_length_1, &mut *result);
             for skipped in 2..match_length_1 {
               matcher.insert(data, n + skipped);
             }
@@ -233,30 +333,33 @@ fn compress_lz11_lazy(data: &[u8], result: &mut Vec<u8>) {
   }
 
   // Flush remaining blocks
-  lz11_context.flush(&mut *result);
+  lz_context.flush(&mut *result);
 }
 
 // Optimal Parsing ---------------------------------------------
-fn compress_lz11_optimal(data: &[u8], result: &mut Vec<u8>) {
-  let mut lz11_context = LZ11Context::new();
-  let choices = optimal_parse(data);
+fn compress_optimal(data: &[u8], format: Format, result: &mut Vec<u8>) {
+  let mut lz_context: Box<dyn LZContext> = match format {
+    Format::LZ10 => Box::new(LZ10Context::new()),
+    Format::LZ11 => Box::new(LZ11Context::new()),
+  };
+  let choices = optimal_parse(data, format);
 
   let mut n = 0;
   for choice in choices.into_iter() {
     match choice {
       Choice::Literal => {
         // Literal byte
-        lz11_context.write_uncompressed_byte(data[n], &mut *result);
+        lz_context.write_uncompressed_byte(data[n], &mut *result);
         n += 1;
       }
       Choice::Reference { length, offset } => {
-        lz11_context.write_compressed_block(n, offset, length, &mut *result);
+        lz_context.write_compressed_block(n, offset, length, &mut *result);
         n += length;
       }
     }
   }
   
-  lz11_context.flush(&mut *result);
+  lz_context.flush(&mut *result);
 }
 
 #[derive(Clone, Copy)]
@@ -283,10 +386,10 @@ fn encoding_cost(length: usize) -> usize {
   }
 }
 
-fn optimal_parse(data: &[u8]) -> Vec<Choice> {
+fn optimal_parse(data: &[u8], format: Format) -> Vec<Choice> {
   let data_len = data.len();
 
-  let mut matcher = HashMatcher::new();
+  let mut matcher = HashMatcher::new(format, 4096);
 
   let mut costs = vec![usize::MAX; data_len + 1];
   let mut choices = vec![Choice::Literal; data_len + 1];
@@ -308,7 +411,7 @@ fn optimal_parse(data: &[u8]) -> Vec<Choice> {
     let matches = matcher.find_matches(data, n);
 
     for (match_start, match_length) in matches {
-      let min_length: usize = LZ11_MIN_MATCH_LENGTH;
+      let min_length: usize = LZ_MIN_MATCH_LENGTH;
       let max_length: usize = match_length.min(data_len - 1);
 
       for length in min_length..=max_length {

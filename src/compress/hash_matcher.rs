@@ -1,26 +1,40 @@
-const LZ11_MAX_INPUT_LENGTH: usize = 0xFFFFFFFF;
-const LZ11_MIN_MATCH_LENGTH: usize = 3;
+use crate::format::Format;
+
+// Constants ---------------------------------------------------
+const LZ_MIN_MATCH_LENGTH: usize = 3;
+const LZ10_MAX_MATCH_LENGTH: usize = 18;
 const LZ11_MAX_MATCH_LENGTH: usize = 65808; // (2^16 - 1) + 0x111
 
 const WINDOW_SIZE: usize = 0x1000; // 4096 byte sliding window
-const HASH_BITS: usize = 12; // 4096 possible hash values
+const HASH_BITS: usize = 12;       // 4096 possible hash values -> log2(4096) bits
 const HASH_SIZE: usize = 1 << HASH_BITS; // 4096
-const HASH_MASK: usize = HASH_SIZE - 1; // 4095
-const HASH_MAX_CHAIN: usize = 256; // Limit the number of candidates to check for a match to avoid worst-case performance
+const HASH_MASK: usize = HASH_SIZE - 1;  // 4095
 
+// Matcher -----------------------------------------------------
 pub(crate) struct HashMatcher {
   head: Vec<usize>,
   prev: Vec<usize>,
+
+  max_match: usize,
+  max_chain: usize,
 }
 
 impl HashMatcher {
-  pub fn new() -> Self {
+  pub fn new(format: Format, max_chain: usize) -> Self {
+    let max_match = match format {
+      Format::LZ10 => LZ10_MAX_MATCH_LENGTH,
+      Format::LZ11 => LZ11_MAX_MATCH_LENGTH,
+    };
+
     HashMatcher {
       // head[hash] gives the most recent offset where a 3-byte sequence with that hash was seen, or usize::MAX if none
       head: vec![usize::MAX; HASH_SIZE],
 
       // ring buffer, prev[offset % WINDOW_SIZE] gives the previous offset where the same 3-byte sequence was seen, or usize::MAX if none
       prev: vec![usize::MAX; WINDOW_SIZE],
+
+      max_match,
+      max_chain,
     }
   }
 
@@ -48,7 +62,7 @@ impl HashMatcher {
   /// Returns offset and length of the longest match for the given offset, or None if no match of at least 3 bytes is found.
   /// The search is limited to the sliding window and the maximum match length.
   pub fn find_longest_match(&self, data: &[u8], offset: usize) -> Option<(usize, usize)> {
-    if offset < LZ11_MIN_MATCH_LENGTH || data.len() < offset + LZ11_MIN_MATCH_LENGTH {
+    if offset < LZ_MIN_MATCH_LENGTH || data.len() < offset + LZ_MIN_MATCH_LENGTH {
       return None;
     }
 
@@ -56,13 +70,13 @@ impl HashMatcher {
     let mut match_candidate = self.head[hash_value];
 
     let lowest_position = offset.saturating_sub(WINDOW_SIZE);
-    let match_limit = LZ11_MAX_MATCH_LENGTH.min(data.len() - offset);
+    let match_limit = self.max_match.min(data.len() - offset);
 
     let mut longest_match = 0;
     let mut match_start = 0;
     let mut steps = 0;
 
-    while match_candidate != usize::MAX && match_candidate >= lowest_position && steps < HASH_MAX_CHAIN {
+    while match_candidate != usize::MAX && match_candidate >= lowest_position && steps < self.max_chain {
       // Skip over self-references
       if match_candidate >= offset {
         match_candidate = self.prev[match_candidate % WINDOW_SIZE];
@@ -88,7 +102,7 @@ impl HashMatcher {
       steps += 1;
     }
 
-    if longest_match < LZ11_MIN_MATCH_LENGTH {
+    if longest_match < LZ_MIN_MATCH_LENGTH {
       None
     } else {
       Some((match_start, longest_match))
@@ -98,7 +112,7 @@ impl HashMatcher {
   /// Returns a vector containing the offset and length of each match found for the given offset.
   /// The search is limited to the sliding window and the maximum match length.
   pub fn find_matches(&self, data: &[u8], offset: usize) -> Vec<(usize, usize)> {
-    if offset < LZ11_MIN_MATCH_LENGTH || data.len() < offset + LZ11_MIN_MATCH_LENGTH {
+    if offset < LZ_MIN_MATCH_LENGTH || data.len() < offset + LZ_MIN_MATCH_LENGTH {
       return Vec::new();
     }
 
@@ -106,12 +120,12 @@ impl HashMatcher {
     let mut match_candidate = self.head[hash_value];
 
     let lowest_position = offset.saturating_sub(WINDOW_SIZE);
-    let match_limit = LZ11_MAX_MATCH_LENGTH.min(data.len() - offset);
+    let match_limit = self.max_match.min(data.len() - offset);
 
     let mut steps = 0;
     let mut matches: Vec<(usize, usize)> = Vec::new();
 
-    while match_candidate != usize::MAX && match_candidate >= lowest_position && steps < HASH_MAX_CHAIN {
+    while match_candidate != usize::MAX && match_candidate >= lowest_position && steps < self.max_chain {
       // Skip over self-references
       if match_candidate >= offset {
         match_candidate = self.prev[match_candidate % WINDOW_SIZE];
@@ -124,7 +138,7 @@ impl HashMatcher {
         len += 1;
       }
 
-      if len >= LZ11_MIN_MATCH_LENGTH {
+      if len >= LZ_MIN_MATCH_LENGTH {
         matches.push((match_candidate, len));
       }
 

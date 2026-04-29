@@ -13,4 +13,7 @@ pub enum LZError {
 
   #[error("input data too large")]
   InputTooLarge,
+
+  #[error("invalid compression level: {0}")]
+  InvalidCompressionLevel(usize),
 }
