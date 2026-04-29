@@ -412,23 +412,20 @@ fn optimal_parse(data: &[u8], format: Format) -> Vec<Choice> {
       choices[n + 1] = Choice::Literal;
     }
 
-    // Option 2: find all matches at position n using hash chains
-    let matches = matcher.find_matches(data, n);
-
-    for (match_start, match_length) in matches {
-      let min_length: usize = LZ_MIN_MATCH_LENGTH;
+    // Option 2: find best match at position n
+    if let Some((match_start, match_length)) = matcher.find_longest_match(data, n) {
+      let min_length: usize = LZ_MIN_MATCH_LENGTH;                                                                                                                                                      
       let max_length: usize = match_length.min(data_len - 1);
-
+                                                                                                                                                                                                        
       for length in min_length..=max_length {
-        let ref_cost = costs[n] + encoding_cost(format, length);
-        let target = n + length;
+          let ref_cost = costs[n] + encoding_cost(format, length);                                                                                                                                              
+          let target = n + length;
 
-        if ref_cost < costs[target] {
-          costs[target] = ref_cost;
-          choices[target] = Choice::Reference { length, offset: match_start };
-        }
-      }
-
+          if ref_cost < costs[target] {
+              costs[target] = ref_cost;
+              choices[target] = Choice::Reference { length, offset: match_start };                                                                                                                      
+          }
+      }                                                                                                                                                                                                 
     }
 
     matcher.insert(data, n);
