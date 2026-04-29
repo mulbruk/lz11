@@ -27,7 +27,7 @@ enum Commands {
     #[arg(short, long, default_value = "lz11")]
     format: Format,
     /// Compression level (1-9)
-    #[arg(short = 'o', default_value_t = 5)]
+    #[arg(short = 'o', long, default_value_t = 5)]
     level: usize,
   },
   /// Decompress an LZ10 or LZ11 compressed file
@@ -39,14 +39,14 @@ enum Commands {
   },
 }
 
-fn cmd_decompress(input: &PathBuf, output: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_decompress(input: &Path, output: &Path) -> Result<(), Box<dyn std::error::Error>> {
   let data = fs::read(input)?;
   let decompressed_data = decompress(&data)?;
   fs::write(output, decompressed_data)?;
   Ok(())
 }
 
-fn cmd_compress(input: &PathBuf, output: &PathBuf, format: Format, level: usize) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_compress(input: &Path, output: &Path, format: Format, level: usize) -> Result<(), Box<dyn std::error::Error>> {
   let data = fs::read(input)?;
   let compressed_data = compress(&data, format, level)?;
   fs::write(output, compressed_data)?;

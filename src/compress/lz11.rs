@@ -4,7 +4,7 @@ use crate::format::Format;
 use super::hash_matcher::HashMatcher;
 
 // Constants ---------------------------------------------------
-const LZ10_MAX_INPUT_LENGTH: usize = 0x1000000;
+const LZ10_MAX_INPUT_LENGTH: usize = 0xFFFFFF;
 const LZ11_MAX_INPUT_LENGTH: usize = 0xFFFFFFFF;
 
 const LZ_MIN_MATCH_LENGTH: usize = 3;
@@ -18,7 +18,7 @@ trait LZContext {
 
 const FLAG_MASKS: [u8; 8] = [0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01];
 
-// LZ110 Context -----------------------------------------------
+// LZ10 Context ------------------------------------------------
 struct LZ10Context {
   flag_byte: u8,
   blocks: Vec<u8>,
@@ -245,21 +245,21 @@ fn compress_greedy(data: &[u8], format: Format, max_chain: usize, result: &mut V
   while n < data.len() {
     matcher.insert(data, n);
     if let Some((match_start, match_length)) = matcher.find_longest_match(data, n) {
-      lz_context.write_compressed_block(n, match_start, match_length, &mut *result);
+      lz_context.write_compressed_block(n, match_start, match_length, result);
       
       for skipped in 1..match_length {
           matcher.insert(data, n + skipped);
       }
       n += match_length;
     } else {
-      lz_context.write_uncompressed_byte(data[n], &mut *result);
+      lz_context.write_uncompressed_byte(data[n], result);
       
       n += 1;
     }
   }
 
   // Flush remaining blocks
-  lz_context.flush(&mut *result);
+  lz_context.flush(result);
 }
 
 // Lazy Hash Chain ---------------------------------------------
@@ -275,7 +275,7 @@ fn compress_lazy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec
   while n < data.len() {
     if n >= data.len() - 3 {
       // Not enough bytes left for a match, so just write uncompressed bytes
-      lz_context.write_uncompressed_byte(data[n], &mut *result);
+      lz_context.write_uncompressed_byte(data[n], result);
       n += 1;
       continue;
     } else {
@@ -286,13 +286,13 @@ fn compress_lazy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec
 
       match (match_1, match_2) {
         (None, None) => {
-          lz_context.write_uncompressed_byte(data[n], &mut *result);
-          lz_context.write_uncompressed_byte(data[n + 1], &mut *result);
+          lz_context.write_uncompressed_byte(data[n], result);
+          lz_context.write_uncompressed_byte(data[n + 1], result);
           n += 2;
         },
         
         (Some((match_start, match_length)), None) => {
-          lz_context.write_compressed_block(n, match_start, match_length, &mut *result);
+          lz_context.write_compressed_block(n, match_start, match_length, result);
           for skipped in 2..match_length {
             matcher.insert(data, n + skipped);
           }
@@ -300,10 +300,10 @@ fn compress_lazy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec
         },
 
         (None, Some((match_start, match_length))) => {
-          lz_context.write_uncompressed_byte(data[n], &mut *result);
+          lz_context.write_uncompressed_byte(data[n], result);
           n += 1;
           
-          lz_context.write_compressed_block(n, match_start, match_length, &mut *result);
+          lz_context.write_compressed_block(n, match_start, match_length, result);
           for skipped in 1..match_length {
             matcher.insert(data, n + skipped);
           }
@@ -312,16 +312,16 @@ fn compress_lazy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec
 
         (Some((match_start_1, match_length_1)), Some((match_start_2, match_length_2))) => {
           if match_length_2 > match_length_1 {
-            lz_context.write_uncompressed_byte(data[n], &mut *result);
+            lz_context.write_uncompressed_byte(data[n], result);
             n += 1;
             
-            lz_context.write_compressed_block(n, match_start_2, match_length_2, &mut *result);
+            lz_context.write_compressed_block(n, match_start_2, match_length_2, result);
             for skipped in 1..match_length_2 {
               matcher.insert(data, n + skipped);
             }
             n += match_length_2;
           } else {
-            lz_context.write_compressed_block(n, match_start_1, match_length_1, &mut *result);
+            lz_context.write_compressed_block(n, match_start_1, match_length_1, result);
             for skipped in 2..match_length_1 {
               matcher.insert(data, n + skipped);
             }
@@ -333,7 +333,7 @@ fn compress_lazy(data: &[u8], format: Format, max_chain: usize, result: &mut Vec
   }
 
   // Flush remaining blocks
-  lz_context.flush(&mut *result);
+  lz_context.flush(result);
 }
 
 // Optimal Parsing ---------------------------------------------
@@ -349,17 +349,17 @@ fn compress_optimal(data: &[u8], format: Format, result: &mut Vec<u8>) {
     match choice {
       Choice::Literal => {
         // Literal byte
-        lz_context.write_uncompressed_byte(data[n], &mut *result);
+        lz_context.write_uncompressed_byte(data[n], result);
         n += 1;
       }
       Choice::Reference { length, offset } => {
-        lz_context.write_compressed_block(n, offset, length, &mut *result);
+        lz_context.write_compressed_block(n, offset, length, result);
         n += length;
       }
     }
   }
   
-  lz_context.flush(&mut *result);
+  lz_context.flush(result);
 }
 
 #[derive(Clone, Copy)]
@@ -368,21 +368,26 @@ enum Choice {
   Reference { length: usize, offset: usize },
 }
 
-fn encoding_cost(length: usize) -> usize {
+fn encoding_cost(format: Format, length: usize) -> usize {
   // Cost in bits for each encoding option
   // 1 flag bit is always consumed regardless of encoding type
   if length == 0 {
     // Literal: 1 flag bit + 8 data bits
     9
-  } else if length <= 16 {
-    // 2-byte reference
-    17
-  } else if length <= 272 {
-    // 3-byte reference
-    25
   } else {
-    // 4-byte reference
-    33
+    match format {
+      Format::LZ10 => 17, 
+      Format::LZ11 => if length <= 16 {
+        // 2-byte reference
+        17
+      } else if length <= 272 {
+        // 3-byte reference
+        25
+      } else {
+        // 4-byte reference
+        33
+      }
+    }
   }
 }
 
@@ -401,7 +406,7 @@ fn optimal_parse(data: &[u8], format: Format) -> Vec<Choice> {
     }
 
     // Option 1: literal at position n
-    let literal_cost = costs[n] + encoding_cost(0);
+    let literal_cost = costs[n] + encoding_cost(format, 0);
     if literal_cost < costs[n + 1] {
       costs[n + 1] = literal_cost;
       choices[n + 1] = Choice::Literal;
@@ -415,7 +420,7 @@ fn optimal_parse(data: &[u8], format: Format) -> Vec<Choice> {
       let max_length: usize = match_length.min(data_len - 1);
 
       for length in min_length..=max_length {
-        let ref_cost = costs[n] + encoding_cost(length);
+        let ref_cost = costs[n] + encoding_cost(format, length);
         let target = n + length;
 
         if ref_cost < costs[target] {
