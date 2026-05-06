@@ -1,3 +1,8 @@
+[![crates.io](https://img.shields.io/crates/v/lz11?logo=rust&style=flat-square)](https://crates.io/crates/lz11) \
+[![docs.rs](https://img.shields.io/badge/docs-lz11-1370D3?style=flat-square&logo=rust)](https://docs.rs/lz11/latest/lz11/) \
+![Crates.io License](https://img.shields.io/crates/l/lz11?style=flat-square) \
+![CI Status](https://github.com/mulbruk/lz11/actions/workflows/ci.yml/badge.svg)
+
 ## What
 
 A library and command-line tool for working with Nintendo's LZ10 and LZ11 compression formats.
@@ -37,6 +42,12 @@ lz11 compress -o9 WLME.dol 00000001.app
 ### Direct Download
 
 Download the latest binary for your system (Windows/Mac/Linux) from the [releases page](https://github.com/mulbruk/lz11/releases)
+
+### Via Cargo
+
+```bash
+cargo install lz11
+```
 
 ### From Source
 
