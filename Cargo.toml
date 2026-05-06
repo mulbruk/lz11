@@ -1,6 +1,7 @@
 [package]
 name = "lz11"
 description = "Library and command-line tool for working with Nintendo's LZ10 and LZ11 compression formats"
+repository = "https://github.com/mulbruk/lz11"
 categories = ["command-line-utilities", "compression"]
 keywords = ["lz10", "lz11", "nintendo"]
 version = "1.0.0"
@@ -8,16 +9,19 @@ edition = "2024"
 rust-version = "1.85"
 exclude = [
   "/docs/",
+  "/release/",
   "/resources/",
   "/tests/",
   "/.github/",
   ".gitignore",
+  "mise.toml",
 ]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 
 
 [features]
+default = ["cli"]
 cli = ["clap"]
 
 [dependencies]
