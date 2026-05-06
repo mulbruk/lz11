@@ -4,7 +4,7 @@ use std::process;
 
 use clap::Parser;
 
-use lz11::{Format, LZError, Strategy, compress, decompress};
+use lz11::{Format, compress, decompress};
 
 #[derive(Parser)]
 struct Args {
