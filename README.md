@@ -1,7 +1,4 @@
-[![crates.io](https://img.shields.io/crates/v/lz11?logo=rust&style=flat-square)](https://crates.io/crates/lz11) \
-[![docs.rs](https://img.shields.io/badge/docs-lz11-1370D3?style=flat-square&logo=rust)](https://docs.rs/lz11/latest/lz11/) \
-![Crates.io License](https://img.shields.io/crates/l/lz11?style=flat-square) \
-![CI Status](https://github.com/mulbruk/lz11/actions/workflows/ci.yml/badge.svg)
+[![crates.io](https://img.shields.io/crates/v/lz11?logo=rust&style=flat-square)](https://crates.io/crates/lz11) [![docs.rs](https://img.shields.io/badge/docs-lz11-1370D3?style=flat-square&logo=rust)](https://docs.rs/lz11/latest/lz11/) ![Crates.io License](https://img.shields.io/crates/l/lz11?style=flat-square) ![CI Status](https://github.com/mulbruk/lz11/actions/workflows/ci.yml/badge.svg)
 
 ## What
 
