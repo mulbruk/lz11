@@ -1,0 +1,26 @@
+# Build environment for lz11 release artifacts.
+#
+# Cross-compiles to:
+#   - x86_64-unknown-linux-musl  (statically linked Linux binary)
+#   - x86_64-pc-windows-gnu      (Windows .exe via MinGW)
+#
+# Built and invoked by release/build-linux-windows.sh.
+
+FROM docker.io/library/rust:slim-bookworm
+
+# Native cross-toolchains:
+#   musl-tools  -> x86_64-linux-musl-gcc, used as linker for the musl target
+#   mingw-w64   -> x86_64-w64-mingw32-gcc, used as linker for windows-gnu
+#   zip         -> for packaging the Windows artifact
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      musl-tools \
+      mingw-w64 \
+      zip \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN rustup target add \
+      x86_64-unknown-linux-musl \
+      x86_64-pc-windows-gnu
+
+WORKDIR /build
